@@ -790,28 +790,36 @@ class LnkShortcut(object):
             if header.attrs & (1 << x):
                 ret["attrs"].append(self.attrs[x])
 
-        offset = 78 + self.read_uint16(76)
-        if len(buf) < offset + 28:
-            log.warning("Provided .lnk file is corrupted or incomplete.")
-            return
+        # head length
+        offset = ctypes.sizeof(LnkHeader) + 4
+        if ret["flags"]["shellidlist"]:
+            offset = 78 + self.read_uint16(76)
+            if len(buf) < offset + 28:
+                log.warning("Provided .lnk file is corrupted or incomplete.")
+                return
 
-        off = LnkEntry.from_buffer_copy(buf[offset:offset + 28])
+        # references is False, not file and dic
+        if ret["flags"]["references"]:
+            off = LnkEntry.from_buffer_copy(buf[offset:offset + 28])
 
-        # Local volume.
-        if off.volume_flags & 1:
-            ret["basepath"] = self.read_stringz(offset + off.base_path)
-        # Network volume.
+            # Local volume.
+            if off.volume_flags & 1:
+                ret["basepath"] = self.read_stringz(offset + off.base_path)
+            # Network volume.
+            else:
+                ret["net_share"] = self.read_stringz(offset + off.net_volume + 20)
+                network_drive = self.read_uint32(offset + off.net_volume + 12)
+                if network_drive:
+                    ret["network_drive"] = self.read_stringz(
+                        offset + network_drive
+                    )
+
+            ret["remaining_path"] = self.read_stringz(offset + off.path_remainder)
+
+            extra = offset + off.length
         else:
-            ret["net_share"] = self.read_stringz(offset + off.net_volume + 20)
-            network_drive = self.read_uint32(offset + off.net_volume + 12)
-            if network_drive:
-                ret["network_drive"] = self.read_stringz(
-                    offset + network_drive
-                )
+            extra = offset
 
-        ret["remaining_path"] = self.read_stringz(offset + off.path_remainder)
-
-        extra = offset + off.length
         if ret["flags"]["description"]:
             extra, ret["description"] = self.read_string16(extra)
         if ret["flags"]["relapath"]:
